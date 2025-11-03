@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>App</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    #root { min-height: 100vh; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script type="text/babel">
+    import React, { useState, useEffect } from 'react'
+import { 
+  ChakraProvider,
+  Box,
+  Container,
+  Heading,
+  Text,
+  VStack,
+  HStack,
+  Button,
+  Input,
+  useColorMode,
+  useColorModeValue,
+  Flex,
+  Spacer,
+  Divider,
+  useToast
+} from '@chakra-ui/react'
+import { 
+  MoonIcon, 
+  SunIcon, 
+  AddIcon
+} from '@chakra-ui/icons'
+import TodoList from './components/TodoList'
+import AuthModal from './components/AuthModal'
+import { db, authHelpers } from './lib/supabase'
+
+function App() {
+  const [todos, setTodos] = useState([])
+  const [newTodo, setNewTodo] = useState('')
+  const [user, setUser] = useState(null)
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
+  const { colorMode, toggleColorMode } = useColorMode()
+  const toast = useToast()
+  
+  // Dark mode optimized colors
+  const bgGradient = useColorModeValue(
+    'yellow.200',
+    'yellow.700'
+  )
+  const textColor = useColorModeValue('gray.800', 'white')
+  const subTextColor = useColorModeValue('gray.600', 'gray.300')
+
+  // Check for user in localStorage on mount
+  useEffect(() => {
+    const storedUser = localStorage.getItem('todoAppUser')
+    if (storedUser) {
+      setUser(JSON.parse(storedUser))
+    }
+  }, [])
+
+  // Load todos when user is authenticated
+  useEffect(() => {
+    if (user) {
+      fetchTodos()
+    }
+  }, [user])
+
+  const fetchTodos = async () => {
+    if (!user) return
+    
+    try {
+      setIsLoading(true)
+      const data = await db.getAll('todos')
+      // Filter todos for current user
+      const userTodos = data.filter(todo => todo.user_id === user.id)
+      setTodos(userTodos)
+    } catch (error) {
+      toast({
+        title: 'Error fetching todos',
+        description: error.message,
+        status: 'error',
+        duration: 3000,
+        isClosable: true,
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const addTodo = async () => {
+    if (!newTodo.trim() || !user) return
+    
+    try {
+      setIsLoading(true)
+      const todo = await db.create('todos', {
+        title: newTodo.trim(),
+        completed: false,
+        user_id: user.id
+      })
+      
+      setTodos([...todos, todo])
+      setNewTodo('')
+      toast({
+        title: 'Todo added',
+        status: 'success',
+        duration: 2000,
+        isClosable: true,
+      })
+    } catch (error) {
+      toast({
+        title: 'Error adding todo',
+        description: error.message,
+        status: 'error',
+        duration: 3000,
+        isClosable: true,
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const toggleTodo = async (id) => {
+    try {
+      const todoToUpdate = todos.find(todo => todo.id === id)
+      if (!todoToUpdate) return
+      
+      const updatedTodo = await db.update('todos', id, {
+        completed: !todoToUpdate.completed
+      })
+      
+      setTodos(todos.map(todo => 
+        todo.id === id ? updatedTodo : todo
+      ))
+    } catch (error) {
+      toast({
+        title: 'Error updating todo',
+        description: error.message,
+        status: 'error',
+        duration: 3000,
+        isClosable: true,
+      })
+    }
+  }
+
+  const deleteTodo = async (id) => {
+    try {
+      await db.delete('todos', id)
+      setTodos(todos.filter(todo => todo.id !== id))
+      toast({
+        title: 'Todo deleted',
+        status: 'success',
+        duration: 2000,
+        isClosable: true,
+      })
+    } catch (error) {
+      toast({
+        title: 'Error deleting todo',
+        description: error.message,
+        status: 'error',
+        duration: 3000,
+        isClosable: true,
+      })
+    }
+  }
+
+  const handleLogin = (userData) => {
+    setUser(userData)
+    localStorage.setItem('todoAppUser', JSON.stringify(userData))
+    setIsAuthModalOpen(false)
+  }
+
+  const handleLogout = async () => {
+    try {
+      await authHelpers.signOut()
+      setUser(null)
+      setTodos([])
+      localStorage.removeItem('todoAppUser')
+      toast({
+        title: 'Logged out successfully',
+        status: 'success',
+        duration: 2000,
+        isClosable: true,
+      })
+    } catch (error) {
+      toast({
+        title: 'Error logging out',
+        description: error.message,
+        status: 'error',
+        duration: 3000,
+        isClosable: true,
+      })
+    }
+  }
+
+  return (
+    <ChakraProvider>
+      <Box
+        minH="100vh"
+        bg={bgGradient}
+        py={8}
+      >
+        <Container maxW="container.md">
+          {/* Header with Dark Mode Toggle */}
+          <Flex align="center" mb={8}>
+            <VStack align="start" spacing={2}>
+              <Heading 
+                size="2xl" 
+                bgGradient="linear(to-r, purple.400, pink.400)"
+                bgClip="text"
+                fontWeight="bold"
+              >
+                Todo App
+              </Heading>
+              <Text fontSize="lg" color={subTextColor}>
+                Keep track of your tasks
+              </Text>
+            </VStack>
+            <Spacer />
+            <HStack>
+              {user ? (
+                <Button
+                  onClick={handleLogout}
+                  colorScheme="red"
+                  variant="outline"
+                  size="md"
+                >
+                  Logout
+                </Button>
+              ) : (
+                <Button
+                  onClick={() => setIsAuthModalOpen(true)}
+                  colorScheme="purple"
+                  size="md"
+                >
+                  Login / Sign Up
+                </Button>
+              )}
+              <Button
+                onClick={toggleColorMode}
+                variant="ghost"
+                size="md"
+                leftIcon={colorMode === 'light' ? <MoonIcon /> : <SunIcon />}
+                colorScheme="purple"
+              >
+                {colorMode === 'light' ? 'Dark' : 'Light'}
+              </Button>
+            </HStack>
+          </Flex>
+
+          {user ? (
+            <>
+              {/* Add Todo Form */}
+              <HStack mb={8}>
+                <Input
+                  placeholder="Add a new todo..."
+                  value={newTodo}
+                  onChange={(e) => setNewTodo(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && addTodo()}
+                  bg={useColorModeValue('white', 'gray.700')}
+                  borderColor={useColorModeValue('gray.300', 'gray.600')}
+                  size="lg"
+                />
+                <Button
+                  leftIcon={<AddIcon />}
+                  colorScheme="blue"
+                  onClick={addTodo}
+                  isLoading={isLoading}
+                  size="lg"
+                >
+                  Add
+                </Button>
+              </HStack>
+
+              <Divider mb={6} />
+
+              {/* Todo List */}
+              <TodoList 
+                todos={todos} 
+                toggleTodo={toggleTodo} 
+                deleteTodo={deleteTodo}
+                isLoading={isLoading}
+              />
+            </>
+          ) : (
+            <VStack spacing={6} py={10} textAlign="center">
+              <Heading size="lg" color={textColor}>
+                Welcome to Todo App
+              </Heading>
+              <Text color={subTextColor} fontSize="lg">
+                Please login or sign up to manage your todos
+              </Text>
+              <Button
+                size="lg"
+                colorScheme="purple"
+                onClick={() => setIsAuthModalOpen(true)}
+              >
+                Get Started
+              </Button>
+            </VStack>
+          )}
+        </Container>
+      </Box>
+
+      {/* Auth Modal */}
+      <AuthModal 
+        isOpen={isAuthModalOpen} 
+        onClose={() => setIsAuthModalOpen(false)}
+        onLogin={handleLogin}
+      />
+    </ChakraProvider>
+  )
+}
+
+export default App
+  </script>
+</body>
+</html>
